@@ -1,0 +1,110 @@
+function [PY,OutputWeight,H,M,memory,Xps,Yps]=MD_OSELMtrain_Add2(X,Y,ActivationFunction,Similarity,Elm_Type,u,a,beta,X1,Y1,InputWeight,BiasMatrix,Hq,k,M1,memory)
+
+ REGRESSION=0;
+ CLASSIFICATION=1;
+%% 归一化
+  if Elm_Type==REGRESSION
+      [inputn1,Xps]=mapminmax(X);
+      [outputn1,Yps]=mapminmax(Y);
+       P1=mapminmax(X1);
+      [outputn2]=mapminmax(Y1);
+  else
+      [inputn1,Xps]=mapminmax(X);
+       P1=mapminmax(X1);
+       outputn1=Y;
+       outputn2=Y1;
+       Yps=0;
+ end
+  T=outputn1;
+  P=inputn1;
+  T1=outputn2;
+  Q=size(P,2);
+  BiasMatrix_1=repmat( BiasMatrix(:,1),1,Q);
+%%   
+ NumberofTrainingData=size(P,2);
+if Elm_Type~=REGRESSION
+    %%%%%%%%%%%% Preprocessing the data of classification
+    sorted_target=sort(T,2);
+     label=zeros(1,1);                               %   Find and save in 'label' class label from training and testing data sets
+     label(1,1)=sorted_target(1,1);
+     j=1;
+    for i = 2:(NumberofTrainingData)
+        if sorted_target(1,i) ~= label(1,j)
+            j=j+1;
+          label(1,j) = sorted_target(1,i);
+        end
+    end
+    number_class=j;
+    NumberofOutputNeurons=number_class;
+   
+    %%%%%%%%%% Processing the targets of training
+    temp_T=zeros(NumberofOutputNeurons, NumberofTrainingData);
+    for i = 1:NumberofTrainingData
+        for j = 1:number_class
+            if label(1,j) == T(1,i)
+                break; 
+            end
+        end
+        temp_T(j,i)=1;
+    end
+      for i = 1:size(T1,2)
+        for j = 1:number_class
+            if label(1,j) == T1(1,i)
+                break; 
+            end
+        end
+        temp_T1(j,i)=1;
+     end
+    T=temp_T*2-1;
+    T1=temp_T1*2-1; 
+end  
+%% 计算隐含层输出矩阵H k
+tempH=InputWeight*P;
+tempH=tempH+BiasMatrix_1;
+
+%%%%%%%%%%% Calculate hidden neuron output matrix H
+switch lower(ActivationFunction)
+     case {'sig','sigmoid'}
+        %%%%%%%% Sigmoid 
+        H = 1 ./ (1 + exp(-tempH))';
+     case {'sin','sine'}
+        %%%%%%%% Sine
+        H = sin(tempH)';    
+     case {'hardlim'}
+        %%%%%%%% Hard Limit
+        H = hardlim(tempH)';            
+        %%%%%%%% More activation functions can be added here                
+end
+%% 计算上一代模型对当前的误差
+   error=nthroot(msereg(abs(T'-H*beta)),2);
+ %% 计算记忆因子
+  memory(k)=Memory(P,P1,Similarity,error,a);
+  %%
+     %%  遗忘数据 k>=u
+       W=prod(memory(k-u+1:k));%累积
+       Ht=cat(1,- W.*Hq,H);
+       Ht1=cat(1,Hq,H);
+       [R]=size(Hq,1);
+      [Q]=size(H,1);
+       M =( M1 - M1*Ht'*(memory(k).*eye(R+Q) + Ht1 * M1 * Ht')^(-1) * Ht1* M1); 
+      tmepmem=memory(k).^2;
+      Tt=cat(1,T',T1');
+       OutputWeight =tmepmem.*beta+ (M * Ht' * (Tt -tmepmem.* Ht1 * beta)); 
+         PY_1=(H * OutputWeight)';
+ %% 
+    if Elm_Type == REGRESSION
+         PY =mapminmax('reverse',PY_1,Yps); 
+    elseif Elm_Type == CLASSIFICATION
+        for i = 1:NumberofTrainingData
+        [x, label_index_expected(i,:)]=max(PY_1(:,i));  
+        end        
+          for i=1:NumberofTrainingData
+              for j=1: number_class
+                if label_index_expected(i,:)==j;
+                 tY(i,:)=label(j);
+                 break;
+                end
+               end
+          end 
+   PY=tY';     
+end
